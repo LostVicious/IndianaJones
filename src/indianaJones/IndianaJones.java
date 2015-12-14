@@ -3,8 +3,12 @@ import indianaJones.KDTree.Euclidean;
 import indianaJones.KDTree.SearchResult;
 
 import java.awt.image.CropImageFilter;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -15,6 +19,11 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.UnsupportedAudioFileException;
+
 
 
 public class IndianaJones {
@@ -24,7 +33,21 @@ public class IndianaJones {
 	
 	public static void main(String[] args) {
 		Evaluation e = new Evaluation();
-		e.crossValidation("AZM",5);
+
+		File f = new File("indiana.wav");
+		System.out.println(f.getAbsolutePath());
+		
+		AudioInputStream audioIn;
+		try {
+			audioIn = AudioSystem.getAudioInputStream(new File("indiana.wav"));
+			Clip clip = AudioSystem.getClip();
+			clip.open(audioIn);
+			clip.start();
+		} catch (Exception e1) {
+			e1.printStackTrace();
+		}
+		
+		e.crossValidation("A2A",5);
 	}
 	
 	public static void mainOld(String[] args) {

@@ -43,7 +43,7 @@ public class Evaluation {
 		System.out.println("=== CROSS VALIDATION n="+N+" ===");
 		Date min = new Date(0),max = new Date(0);
 		long deltaT = Long.MAX_VALUE;
-		ArrayList<Performance> risultati = new ArrayList<Performance>();
+		ArrayList<Performance> performances = new ArrayList<Performance>();
 		String query = "SELECT MIN(tempo) as mi, MAX(tempo) AS ma FROM consolidata2minuti WHERE codalfa='"+codalfa+"'";
 		try {
 			Statement stmt = conn.createStatement();
@@ -83,6 +83,7 @@ public class Evaluation {
 				int mil = 1000*60*60*24; //milliseconds in a day
 				
 				int nTrade=0,nTradePositivi=0,guadagnoTotale=0;
+				ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
 				
 				rs = stmt.executeQuery(query);
 				while(rs.next()) {
@@ -93,13 +94,14 @@ public class Evaluation {
 					if (!giorniGiaTradati.contains(PointDay) && condizioni(tree,vwapRatio,vwapRatioFTSE)) {
 						giorniGiaTradati.add(PointDay);
 						float guadagno = rs.getFloat("gainLong99_99");
+						trades.add(new TradeResult(guadagno));
 						System.out.println("Entrato "+tempo+"\tGuadagno:\t"+guadagno);
 						nTrade++;
 						if (guadagno>0) nTradePositivi++;
 						guadagnoTotale += guadagno;
 					}
 				}
-				risultati.add(new Performance(nTrade, (float)nTradePositivi/nTrade, (int)guadagnoTotale/nTrade, guadagnoTotale));
+				performances.add(new Performance(trades));
 				//output separatore
 				//salva guadagnoMedio in array
 			
@@ -108,31 +110,20 @@ public class Evaluation {
 			//return guadagno medio totale
 			}
 			System.out.println("====== CROSS VALIDATION TERMINATA =======");
-			for (Performance p : risultati) {
+			for (Performance p : performances) {
 				System.out.println(p);
 			}
 			System.out.println("====== PERFORMANCE COMPLESSIVA: =======");
-			System.out.println(complessiva(risultati));
+			ArrayList<TradeResult> tradesTotali = new ArrayList<TradeResult>();
+			for (Performance p : performances) {
+				tradesTotali.addAll(p.trades);
+			}
+			System.out.println(new Performance(tradesTotali));
 			
 			
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-	}
-	
-	Performance complessiva(ArrayList<Performance> risultati) {
-		Performance complessiva = new Performance(0, 0, 0, 0);
-		for (Performance p : risultati) {
-			complessiva.nTrade += p.nTrade;
-			complessiva.percentualeDiSuccesso += p.percentualeDiSuccesso;
-			complessiva.guadagnoMedio += p.guadagnoMedio;
-			complessiva.guadagnoTotale += p.guadagnoTotale;
-		}
-		complessiva.nTrade /= risultati.size();
-		complessiva.percentualeDiSuccesso /= risultati.size();
-		complessiva.guadagnoMedio /= risultati.size();
-		complessiva.guadagnoTotale /= risultati.size();
-		return complessiva;
 	}
 	
 	boolean condizioni(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {

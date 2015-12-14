@@ -2,6 +2,7 @@ package indianaJones;
 import indianaJones.KDTree.Euclidean;
 import indianaJones.KDTree.SearchResult;
 
+import java.awt.image.CropImageFilter;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
@@ -22,6 +23,11 @@ public class IndianaJones {
 	DateFormat tsFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
 	
 	public static void main(String[] args) {
+		Evaluation e = new Evaluation();
+		e.crossValidation("AZM",5);
+	}
+	
+	public static void mainOld(String[] args) {
 		Euclidean<PuntoConsolidato> tree;
 		tree = new Euclidean<PuntoConsolidato>(2); //2 dimensioni
 		
@@ -129,68 +135,6 @@ public class IndianaJones {
 		
 	}
 	
-	String dataQuery(String codalfa, String timeCondition) {
-		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, bookLiquidity, bookImbalance, volatility "+
-				"from consolidata2minuti c, indicatori i "+  
-				"where codalfa='"+codalfa+"' AND "+timeCondition+" AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
-				"order by c.tempo";
-		return query;
-	}
-	
-	void crossValidation(String codalfa, int N) {
-		Date min = new Date(0),max = new Date(0);
-		long deltaT = Long.MAX_VALUE;
-		String query = "SELECT MIN(tempo) as mi, MAX(tempo) AS ma FROM consolidata2minuti WHERE codalfa='"+codalfa+"'";
-		try {
-			Statement stmt = conn.createStatement();
-			ResultSet rs = stmt.executeQuery(query);
-			while(rs.next()) {
-				min = rs.getDate("mi");
-				max = rs.getDate("ma");
-			}
-			deltaT = max.getTime()-min.getTime()/N;
-		
-			//qui abbiamo min max e deltaT
-			
-			
-			for (long startT=min.getTime();startT<max.getTime();startT+=deltaT) {
-				//genera tree prendendo dati da mi a startT e da startT+deltaT a ma
-				//carico dati Training:
-				query=dataQuery(codalfa, "(c.tempo>='"+tsFormat.format(min)+"' AND c.tempo<'"+tsFormat.format(new Date(startT))+"') "+
-										"OR (c.tempo>='"+tsFormat.format(new Date(startT+deltaT))+"' AND c.tempo<='"+tsFormat.format(max)+"')");
-				
-				//carico i dati nella Mappa
-				Euclidean<PuntoConsolidato> tree = new Euclidean<PuntoConsolidato>(2); //2 dimensioni
-				rs = stmt.executeQuery(query);
-				ArrayList<Float> t = new ArrayList<Float>();
-				while(rs.next()) {
-					double vwapRatio = rs.getFloat("vwapRatio");
-					double vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
-					Date tempo = rs.getDate("tempo");
-					tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
-				}
-			}
-			
-				//testa il tree con dati da startT a starT+deltaT:
-					//blacklist dei giorni, trada sulla prima occasione della giornata
-			
-					//output i singoli trade che fa, calcola guadagnoMedio
-			
-				//output separatore
-				//salva guadagnoMedio in array
-			
-			//outputta i guadagni medi delle varie crossvalidation, e il guadagno medio totale
-			
-			//return guadagno medio totale
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
-	
-	void testaTitoli() {
-		//per titolo in titoli 
-		//output crossvalidation(titolo)
-	}
 	
 
 }

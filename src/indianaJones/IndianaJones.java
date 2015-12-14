@@ -2,6 +2,9 @@ package indianaJones;
 import indianaJones.KDTree.Euclidean;
 import indianaJones.KDTree.SearchResult;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -26,7 +29,7 @@ public class IndianaJones {
 		
 		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, bookLiquidity, bookImbalance, volatility "+
 			"from consolidata2minuti c, indicatori i "+  
-			"where codalfa='ATL' AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
+			"where codalfa='AZM' AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
 			"order by c.tempo";
 		
 		try {
@@ -52,7 +55,11 @@ public class IndianaJones {
 		
 		ArrayList<Integer> blacklistedDays = new ArrayList<Integer>();
 		int mil = 1000*60*60*24; //milliseconds in a day
-		
+		try {
+			System.setOut(new PrintStream(new FileOutputStream("output.csv")));
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
 		int K=5;
 		double min=0.965,max=1.03,interval=0.0008;
 		for (double y = min; y <= max; y+=interval) {
@@ -61,26 +68,54 @@ public class IndianaJones {
 		for (double x = min; x <= max; x+=interval) {
 			System.out.print("\n"+x+"\t");
 			for (double y = min; y <= max; y+=interval) {
-				ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{x,y}, 500);
+				/*
+				double i=interval*10;
+				ArrayList<PuntoConsolidato> r = tree.rectSearch(new double[]{x-i,y-i}, new double[]{x+i,y+i});
 				double sommaDist=0, sommaGuadagno=0;
 				blacklistedDays.clear();
 				int nViciniUsati=0;
-				for (SearchResult<PuntoConsolidato> p : r) {
-					int pointDay = (int)p.payload.tempo.getTime()/mil;
+				for (PuntoConsolidato p : r) {
+					int pointDay = (int)p.tempo.getTime()/mil;
+					//System.out.println("d="+p.distance);
 					if (!blacklistedDays.contains(pointDay)) {
 						//System.out.println(p.payload);
 						blacklistedDays.add(pointDay);
 						nViciniUsati++;
-						sommaDist += p.distance*100000;
-						sommaGuadagno += p.payload.guadagno;
+						sommaGuadagno += p.guadagno;
 					}
-					if (nViciniUsati>=K) break;
-					//System.out.println(p.payload);
+				}*/
+				
+				ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{x,y}, 1000);
+				double sommaDist=0, sommaGuadagno=0;
+				blacklistedDays.clear();
+				int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
+				float Tot=0;
+				for (SearchResult<PuntoConsolidato> p : r) {
+					int pointDay = (int)p.payload.tempo.getTime()/mil;
+					//System.out.println("d="+p.distance);
+					double maxD=0.00003;
+					if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
+					//if (p.distance<maxD) {
+						//System.out.println(p.payload);
+						if (!blacklistedDays.contains(pointDay)) {
+							blacklistedDays.add(pointDay);
+							nGiorniNelVicinato++;
+						}
+						nViciniUsati++;
+						sommaDist += p.distance*100000;
+						sommaGuadagno += p.payload.guadagno*(1-(p.distance/maxD));
+						if (p.payload.guadagno>0) nPositivi++;
+						Tot+=1-(p.distance/maxD);
+					}
+					//if (nViciniUsati>=K) break;
 				}
-				if (sommaDist/K>3)
-					System.out.print("-999\t");
+				//System.out.println("n="+nViciniUsati);
+				 
+				if (nGiorniNelVicinato<3)
+					System.out.print("0\t");
 				else
-					System.out.print(Math.round(sommaGuadagno/K)+"\t");
+					System.out.print((float)nPositivi/nViciniUsati+"\t");
+					//System.out.print(Math.round(sommaGuadagno/Tot)+"\t");
 			}
 		}
 		

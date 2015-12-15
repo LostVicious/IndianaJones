@@ -28,7 +28,7 @@ public class Evaluation {
 	}
 
 	String dataQuery(String codalfa, String timeCondition) {
-		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, bookLiquidity, bookImbalance, volatility "+
+		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, gainLong25_22, bookLiquidity, bookImbalance, volatility "+
 						"FROM (SELECT * "+ 
 						"FROM consolidata2minuti c "+
 						"where codalfa='"+codalfa+"' "+
@@ -72,7 +72,8 @@ public class Evaluation {
 					double vwapRatio = rs.getFloat("vwapRatio");
 					double vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
 					Date tempo = rs.getDate("tempo");
-					tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
+					//tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
+					tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong25_22"),tempo));
 				}
 				
 				//testa il tree con dati da startT a starT+deltaT:
@@ -93,7 +94,8 @@ public class Evaluation {
 					int PointDay = (int)tempo.getTime()/mil;
 					if (!giorniGiaTradati.contains(PointDay) && condizioni(tree,vwapRatio,vwapRatioFTSE)) {
 						giorniGiaTradati.add(PointDay);
-						float guadagno = rs.getFloat("gainLong99_99");
+						//float guadagno = rs.getFloat("gainLong99_99");
+						float guadagno = rs.getFloat("gainLong25_22");
 						trades.add(new TradeResult(guadagno));
 						System.out.println("Entrato "+tempo+"\tGuadagno:\t"+guadagno);
 						nTrade++;
@@ -156,6 +158,40 @@ public class Evaluation {
 		if (nGiorniNelVicinato>=3 && (float)nPositivi/nViciniUsati >0.60) {
 			return true;
 		}
+		return false;
+	}
+	
+	boolean condizioniSharpe(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
+		//MAPPA SHARP
+		ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{vwapRatio,vwapRatioFtse}, 1000);
+		int mil = 1000*60*60*24; //milliseconds in a day
+		ArrayList<Integer> blacklistedDays = new ArrayList<Integer>();		
+		int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
+		float Tot=0;
+		ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
+		for (SearchResult<PuntoConsolidato> p : r) {
+			int pointDay = (int)p.payload.tempo.getTime()/mil;
+			//System.out.println("d="+p.distance);
+			double maxD=0.00003;
+			if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
+			//if (p.distance<maxD) {
+				//System.out.println(p.payload);
+				if (!blacklistedDays.contains(pointDay)) {
+					blacklistedDays.add(pointDay);
+					nGiorniNelVicinato++;
+					//trades.add(new TradeResult((float)p.payload.guadagno));
+				}
+				trades.add(new TradeResult((float)p.payload.guadagno));
+				nViciniUsati++;
+				Tot+=1-(p.distance/maxD);
+			}
+			//if (nViciniUsati>=K) break;
+		}
+		
+		Performance performanceVicinato = new Performance(trades);
+		
+		if (nGiorniNelVicinato>=2 && performanceVicinato.sharpRatio>0.3)
+			return true;
 		return false;
 	}
 

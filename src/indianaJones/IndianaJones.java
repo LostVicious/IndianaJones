@@ -31,9 +31,7 @@ public class IndianaJones {
 	static private Connection conn;
 	DateFormat tsFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
 	
-	public static void main(String[] args) {
-		Evaluation e = new Evaluation();
-
+	public static void musichetta() {
 		File f = new File("indiana.wav");
 		System.out.println(f.getAbsolutePath());
 		
@@ -46,11 +44,16 @@ public class IndianaJones {
 		} catch (Exception e1) {
 			e1.printStackTrace();
 		}
-		
+	}
+	
+	public static void main(String[] args) {
+		Evaluation e = new Evaluation();
+		musichetta();
 		e.crossValidation("A2A",5);
 	}
 	
-	public static void mainOld(String[] args) {
+	public static void mainOLD(String[] args) {
+		musichetta();
 		Euclidean<PuntoConsolidato> tree;
 		tree = new Euclidean<PuntoConsolidato>(2); //2 dimensioni
 		
@@ -58,7 +61,7 @@ public class IndianaJones {
 		
 		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, bookLiquidity, bookImbalance, volatility "+
 			"from consolidata2minuti c, indicatori i "+  
-			"where codalfa='AZM' AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
+			"where codalfa='A2A' AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
 			"order by c.tempo";
 		
 		try {
@@ -112,8 +115,9 @@ public class IndianaJones {
 						nViciniUsati++;
 						sommaGuadagno += p.guadagno;
 					}
-				}*/
+				}/**/
 				
+				/*
 				ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{x,y}, 1000);
 				double sommaDist=0, sommaGuadagno=0;
 				blacklistedDays.clear();
@@ -131,19 +135,46 @@ public class IndianaJones {
 							nGiorniNelVicinato++;
 						}
 						nViciniUsati++;
-						sommaDist += p.distance*100000;
 						sommaGuadagno += p.payload.guadagno*(1-(p.distance/maxD));
 						if (p.payload.guadagno>0) nPositivi++;
 						Tot+=1-(p.distance/maxD);
 					}
 					//if (nViciniUsati>=K) break;
 				}
-				//System.out.println("n="+nViciniUsati);
+				//System.out.println("n="+nViciniUsati);*/
 				 
-				if (nGiorniNelVicinato<3)
+				//MAPPA SHARP
+				ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{x,y}, 1000);
+				double sommaDist=0;
+				blacklistedDays.clear();
+				int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
+				float Tot=0;
+				ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
+				for (SearchResult<PuntoConsolidato> p : r) {
+					int pointDay = (int)p.payload.tempo.getTime()/mil;
+					//System.out.println("d="+p.distance);
+					double maxD=0.00003;
+					if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
+					//if (p.distance<maxD) {
+						//System.out.println(p.payload);
+						if (!blacklistedDays.contains(pointDay)) {
+							blacklistedDays.add(pointDay);
+							nGiorniNelVicinato++;
+							//trades.add(new TradeResult((float)p.payload.guadagno));
+						}
+						trades.add(new TradeResult((float)p.payload.guadagno));
+						nViciniUsati++;
+						Tot+=1-(p.distance/maxD);
+					}
+					//if (nViciniUsati>=K) break;
+				}
+				
+				if (nGiorniNelVicinato<2)
 					System.out.print("0\t");
-				else
-					System.out.print((float)nPositivi/nViciniUsati+"\t");
+				else {
+					Performance performanceVicinato = new Performance(trades);
+					System.out.print(performanceVicinato.sharpRatio+"\t");
+				}
 					//System.out.print(Math.round(sommaGuadagno/Tot)+"\t");
 			}
 		}

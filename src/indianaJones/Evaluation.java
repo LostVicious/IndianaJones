@@ -11,6 +11,9 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Map;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 public class Evaluation {
 	Connection conn;
@@ -55,52 +58,65 @@ public class Evaluation {
 			deltaT = (max.getTime()-min.getTime())/N;
 			//qui abbiamo min max e deltaT
 			
+			//prendo tutti i dati per questo ticker:
+			query=dataQuery(codalfa, "1=1");
+			System.out.println(query);
+			TreeMap<Date, PuntoConsolidato> dati = new TreeMap<Date, PuntoConsolidato>();
+			rs = stmt.executeQuery(query);
+			while(rs.next()) {
+				Date tempo = rs.getTimestamp("tempo");
+				//Date tempo = rs.getDate("tempo");
+				Float vwapRatio = rs.getFloat("vwapRatio");
+				Float vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
+				//Float guadagno = rs.getFloat("gainLong99_99");
+				Float guadagno = rs.getFloat("gainLong25_22");
+				dati.put(rs.getTimestamp("tempo"), new PuntoConsolidato(vwapRatio, vwapRatioFTSE, guadagno, tempo));
+			}
 			
 			for (long startT=min.getTime();startT<max.getTime();startT+=deltaT) {
 				System.out.println("=== GRUPPO test: "+new Date(startT));
 				
 				//genera tree prendendo dati da mi a startT e da startT+deltaT a ma
 				//carico dati Training:
-				query=dataQuery(codalfa, "(c.tempo>='"+tsFormat.format(min)+"' AND c.tempo<'"+tsFormat.format(new Date(startT))+"') "+
-										"OR (c.tempo>='"+tsFormat.format(new Date(startT+deltaT))+"' AND c.tempo<='"+tsFormat.format(max)+"')");
-				System.out.println(query);
+				//query=dataQuery(codalfa, "(c.tempo>='"+tsFormat.format(min)+"' AND c.tempo<'"+tsFormat.format(new Date(startT))+"') "+
+				//						"OR (c.tempo>='"+tsFormat.format(new Date(startT+deltaT))+"' AND c.tempo<='"+tsFormat.format(max)+"')");
+				//System.out.println(query);
 				//carico i dati nella Mappa
 				Euclidean<PuntoConsolidato> tree = new Euclidean<PuntoConsolidato>(2); //2 dimensioni
-				rs = stmt.executeQuery(query);
-				ArrayList<Float> t = new ArrayList<Float>();
-				while(rs.next()) {
-					double vwapRatio = rs.getFloat("vwapRatio");
-					double vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
-					Date tempo = rs.getDate("tempo");
+				
+				TreeMap<Date, PuntoConsolidato> trainingSet = new TreeMap<Date, PuntoConsolidato>();
+				trainingSet.putAll(dati.subMap(min, new Date(startT)));
+				trainingSet.putAll(dati.subMap(new Date(startT+deltaT), max));
+				
+				System.out.println("Dati di training: "+trainingSet.size());
+				
+				for (Map.Entry<Date, PuntoConsolidato> e : trainingSet.entrySet()) {
+					PuntoConsolidato p = e.getValue();
 					//tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
-					tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong25_22"),tempo));
+					tree.addPoint(new double[]{p.vwapRatio,p.vwapRatioFTSE}, new PuntoConsolidato(p.vwapRatio,p.vwapRatioFTSE,p.guadagno,p.tempo));
 				}
 				
 				//testa il tree con dati da startT a starT+deltaT:
-				query=dataQuery(codalfa, "c.tempo>='"+tsFormat.format(new Date(startT))+"' AND c.tempo<'"+tsFormat.format(new Date(startT+deltaT))+"' "); 
+				//query=dataQuery(codalfa, "c.tempo>='"+tsFormat.format(new Date(startT))+"' AND c.tempo<'"+tsFormat.format(new Date(startT+deltaT))+"' "); 
+				TreeMap<Date, PuntoConsolidato> testSet = new TreeMap<Date, PuntoConsolidato>();
+				testSet.putAll(dati.subMap(new Date(startT),new Date(startT+deltaT)));
+				
+				System.out.println("Dati di testing: "+testSet.size());
 				
 				//blacklist dei giorni, trada sulla prima occasione della giornata
 				ArrayList<Integer> giorniGiaTradati = new ArrayList<Integer>();
 				int mil = 1000*60*60*24; //milliseconds in a day
 				
-				int nTrade=0,nTradePositivi=0,guadagnoTotale=0;
 				ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
 				
-				rs = stmt.executeQuery(query);
-				while(rs.next()) {
-					double vwapRatio = rs.getFloat("vwapRatio");
-					double vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
-					Date tempo = rs.getDate("tempo");
-					int PointDay = (int)tempo.getTime()/mil;
-					if (!giorniGiaTradati.contains(PointDay) && condizioni(tree,vwapRatio,vwapRatioFTSE)) {
+				for (Map.Entry<Date, PuntoConsolidato> e : testSet.entrySet()) {
+					PuntoConsolidato p = e.getValue();
+					//System.out.println(p);
+					int PointDay = (int)p.tempo.getTime()/mil;
+					if (!giorniGiaTradati.contains(PointDay) && condizioni(tree,p.vwapRatio,p.vwapRatioFTSE)) {
 						giorniGiaTradati.add(PointDay);
-						//float guadagno = rs.getFloat("gainLong99_99");
-						float guadagno = rs.getFloat("gainLong25_22");
-						trades.add(new TradeResult(guadagno));
-						System.out.println("Entrato "+tempo+"\tGuadagno:\t"+guadagno);
-						nTrade++;
-						if (guadagno>0) nTradePositivi++;
-						guadagnoTotale += guadagno;
+						trades.add(new TradeResult((float)p.guadagno));
+						System.out.println("Entrato "+p.tempo+"\tGuadagno:\t"+p.guadagno);
 					}
 				}
 				performances.add(new Performance(trades));
@@ -131,10 +147,8 @@ public class Evaluation {
 	boolean condizioni(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
 		ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{vwapRatio,vwapRatioFtse}, 1000);
 		int mil = 1000*60*60*24; //milliseconds in a day
-		double sommaDist=0, sommaGuadagno=0;
 		ArrayList<Integer> blacklistedDays = new ArrayList<Integer>();
 		int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
-		float Tot=0;
 		for (SearchResult<PuntoConsolidato> p : r) {
 			int pointDay = (int)p.payload.tempo.getTime()/mil;
 			//System.out.println("d="+p.distance);
@@ -147,10 +161,7 @@ public class Evaluation {
 					nGiorniNelVicinato++;
 				}
 				nViciniUsati++;
-				sommaDist += p.distance*100000;
-				sommaGuadagno += p.payload.guadagno*(1-(p.distance/maxD));
 				if (p.payload.guadagno>0) nPositivi++;
-				Tot+=1-(p.distance/maxD);
 			}
 			//if (nViciniUsati>=K) break;
 		}

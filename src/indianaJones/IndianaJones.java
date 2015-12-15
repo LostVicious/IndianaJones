@@ -18,6 +18,8 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Map;
+import java.util.TreeMap;
 
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -47,8 +49,15 @@ public class IndianaJones {
 	}
 	
 	public static void main(String[] args) {
+		
 		Evaluation e = new Evaluation();
 		musichetta();
+		/*for (long i=0;i<1000000000;i+=1000000) {
+			int mil = 1000*60*60*24; //milliseconds in a day
+			Date tempo = new Date(i); 
+			System.out.println(new Date(i) +"  "+(int)tempo.getTime()/mil);
+		}*/
+
 		e.crossValidation("A2A",5);
 	}
 	
@@ -64,6 +73,7 @@ public class IndianaJones {
 			"where codalfa='A2A' AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " + 
 			"order by c.tempo";
 		
+		TreeMap<Date, PuntoConsolidato> dati = new TreeMap<Date, PuntoConsolidato>();
 		try {
 			Class.forName("com.mysql.jdbc.Driver");
 	        conn = DriverManager.getConnection("jdbc:mysql://localhost/?user=root&password=zxcvbnm");
@@ -73,12 +83,27 @@ public class IndianaJones {
 			Statement stmt = conn.createStatement();
 			ResultSet rs = stmt.executeQuery(query);
 			ArrayList<Float> t = new ArrayList<Float>();
-			while(rs.next()) {
+			/*while(rs.next()) {
 				double vwapRatio = rs.getFloat("vwapRatio");
 				double vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
 				Date tempo = rs.getDate("tempo");
 				tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
 			}
+			rs = stmt.executeQuery(query);/**/
+			while(rs.next()) {
+				Date tempo = rs.getDate("tempo");
+				//Date tempo = rs.getDate("tempo");
+				Float vwapRatio = rs.getFloat("vwapRatio");
+				Float vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
+				//Float guadagno = rs.getFloat("gainLong99_99");
+				Float guadagno = rs.getFloat("gainLong99_99");
+				dati.put(rs.getTimestamp("tempo"), new PuntoConsolidato(vwapRatio, vwapRatioFTSE, guadagno, tempo));
+			}
+			for (Map.Entry<Date, PuntoConsolidato> e : dati.entrySet()) {
+				PuntoConsolidato p = e.getValue();
+				tree.addPoint(new double[]{p.vwapRatio,p.vwapRatioFTSE}, new PuntoConsolidato(p.vwapRatio,p.vwapRatioFTSE,p.guadagno,p.tempo));
+			}/**/
+			
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

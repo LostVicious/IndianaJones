@@ -10,7 +10,9 @@ import java.sql.Statement;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -18,7 +20,8 @@ import java.util.TreeMap;
 public class Evaluation {
 	Connection conn;
 	DateFormat tsFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
-
+	int mil = 1000*60*60*24; //milliseconds in a day
+	
 	public Evaluation() {
 		try {
 			Class.forName("com.mysql.jdbc.Driver");
@@ -31,19 +34,73 @@ public class Evaluation {
 	}
 
 	String dataQuery(String codalfa, String timeCondition) {
-		String query = "SELECT c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, gainLong25_22, bookLiquidity, bookImbalance, volatility "+
+		String query = "SELECT codalfa, c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, gainLong25_22, bookLiquidity, bookImbalance, volatility "+
 						"FROM (SELECT * "+ 
 						"FROM consolidata2minuti c "+
 						"where codalfa='"+codalfa+"' "+
-						"AND "+timeCondition+ 
-						") AS c, indicatori i "+
+						"AND ("+timeCondition+ 
+						")) AS c, indicatori i "+
 						"WHERE i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) "+ 
 						"ORDER by c.tempo ";
 		return query;
 	}
 	
 	void crossValidation(String codalfa, int N) {
-		System.out.println("=== CROSS VALIDATION n="+N+" ===");
+		this.crossValidation(codalfa, N,new Euclidean<PuntoConsolidato>(2));
+	}
+	
+	Euclidean<PuntoConsolidato> generateTreeAll(String timeCondition) {
+		String query = "SELECT codalfa, c.tempo, i.valore AS  vwapRatioFTSE, `minuto`, `vwapRatio`, `deltaVwap`, `ipercomprato60_85`, `gainLong99_99`, gainLong25_22, bookLiquidity, bookImbalance, volatility "+
+				"from consolidata2minuti c, indicatori i "+  
+				"where ("+timeCondition+") AND i.indicatore='vwapRatioFTSE' AND i.tempo = from_unixtime(60*floor(unix_timestamp(c.tempo)/60)) " +
+				"order by c.tempo";
+		Euclidean<PuntoConsolidato> result = new Euclidean<PuntoConsolidato>(2);
+		try {
+			Statement stmt = conn.createStatement();
+			ResultSet rs = stmt.executeQuery(query);
+			while(rs.next()) {
+				PuntoConsolidato p = new PuntoConsolidato(rs);
+				result.addPoint(new double[]{p.vwapRatio,p.vwapRatioFTSE}, p);
+			}
+		}  catch (Exception e) {
+			e.printStackTrace();
+		}
+		return result;
+	}
+	
+	ArrayList<PuntoConsolidato> puntiTitoloPeriodo(String codalfa,String timeCondition) {
+		ArrayList<PuntoConsolidato> punti = new ArrayList<PuntoConsolidato>();
+		String query = dataQuery(codalfa, timeCondition);
+		try {
+			Statement stmt = conn.createStatement();
+			ResultSet rs = stmt.executeQuery(query);
+			while(rs.next()) {
+				punti.add(new PuntoConsolidato(rs));
+			}
+		}  catch (Exception e) {
+			e.printStackTrace();
+		}
+		return punti;
+	}
+	
+	Performance testSampleGroup(Collection<PuntoConsolidato> points, Euclidean<PuntoConsolidato> tree, Metodo metodo) {
+		ArrayList<Integer> giorniGiaTradati = new ArrayList<Integer>();
+		ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
+		for (Iterator<PuntoConsolidato> i=points.iterator(); i.hasNext(); ) {
+			PuntoConsolidato p = i.next();
+			int pointDay = (int)(p.tempo.getTime()/mil);
+			if (!giorniGiaTradati.contains(pointDay) && metodo.call(tree,p.vwapRatio,p.vwapRatioFTSE)) {
+				giorniGiaTradati.add(pointDay);
+				trades.add(new TradeResult((float)p.guadagno));
+				//System.out.println("Entrato "+p.tempo+"\tGuadagno:\t"+(p.guadagno>0 ? G.ANSI_GREEN:G.ANSI_RED) + p.guadagno + G.ANSI_RESET);
+			}
+		 }
+		return new Performance(trades);
+	}
+	
+	Performance crossValidation(String codalfa, int N, Euclidean<PuntoConsolidato> defaultTree) {
+		boolean printall = false;
+		System.out.println("=== CROSS VALIDATION "+codalfa+" n="+N+" ===");
 		Date min = new Date(0),max = new Date(0);
 		long deltaT = Long.MAX_VALUE;
 		ArrayList<Performance> performances = new ArrayList<Performance>();
@@ -60,97 +117,71 @@ public class Evaluation {
 			
 			//prendo tutti i dati per questo ticker:
 			query=dataQuery(codalfa, "1=1");
-			System.out.println(query);
+			if (printall) System.out.println(query);
 			TreeMap<Date, PuntoConsolidato> dati = new TreeMap<Date, PuntoConsolidato>();
 			rs = stmt.executeQuery(query);
 			while(rs.next()) {
 				Date tempo = rs.getTimestamp("tempo");
-				//Date tempo = rs.getDate("tempo");
 				Float vwapRatio = rs.getFloat("vwapRatio");
 				Float vwapRatioFTSE = rs.getFloat("vwapRatioFTSE");
-				//Float guadagno = rs.getFloat("gainLong99_99");
-				Float guadagno = rs.getFloat("gainLong25_22");
-				dati.put(rs.getTimestamp("tempo"), new PuntoConsolidato(vwapRatio, vwapRatioFTSE, guadagno, tempo));
+				Float guadagno = rs.getFloat("gainLong99_99");
+				dati.put(rs.getTimestamp("tempo"), new PuntoConsolidato(rs.getString("codalfa"),vwapRatio, vwapRatioFTSE, guadagno, tempo));
 			}
 			
 			for (long startT=min.getTime();startT<max.getTime();startT+=deltaT) {
-				System.out.println("=== GRUPPO test: "+new Date(startT));
-				
-				//genera tree prendendo dati da mi a startT e da startT+deltaT a ma
-				//carico dati Training:
-				//query=dataQuery(codalfa, "(c.tempo>='"+tsFormat.format(min)+"' AND c.tempo<'"+tsFormat.format(new Date(startT))+"') "+
-				//						"OR (c.tempo>='"+tsFormat.format(new Date(startT+deltaT))+"' AND c.tempo<='"+tsFormat.format(max)+"')");
-				//System.out.println(query);
+				if (printall) System.out.println("=== GRUPPO test: "+new Date(startT));
 				//carico i dati nella Mappa
 				Euclidean<PuntoConsolidato> tree = new Euclidean<PuntoConsolidato>(2); //2 dimensioni
 				
-				TreeMap<Date, PuntoConsolidato> trainingSet = new TreeMap<Date, PuntoConsolidato>();
-				trainingSet.putAll(dati.subMap(min, new Date(startT)));
-				trainingSet.putAll(dati.subMap(new Date(startT+deltaT), max));
-				
-				System.out.println("Dati di training: "+trainingSet.size());
-				
-				for (Map.Entry<Date, PuntoConsolidato> e : trainingSet.entrySet()) {
-					PuntoConsolidato p = e.getValue();
-					//tree.addPoint(new double[]{vwapRatio,vwapRatioFTSE}, new PuntoConsolidato(vwapRatio,vwapRatioFTSE,rs.getFloat("gainLong99_99"),tempo));
-					tree.addPoint(new double[]{p.vwapRatio,p.vwapRatioFTSE}, new PuntoConsolidato(p.vwapRatio,p.vwapRatioFTSE,p.guadagno,p.tempo));
+				if (defaultTree.size()>0) tree = defaultTree;
+				else {
+					TreeMap<Date, PuntoConsolidato> trainingSet = new TreeMap<Date, PuntoConsolidato>();
+					trainingSet.putAll(dati.subMap(min, new Date(startT)));
+					trainingSet.putAll(dati.subMap(new Date(startT+deltaT), max));
+					
+					if (printall) System.out.println("Dati di training: "+trainingSet.size());
+					
+					for (Map.Entry<Date, PuntoConsolidato> e : trainingSet.entrySet()) {
+						PuntoConsolidato p = e.getValue();
+						tree.addPoint(new double[]{p.vwapRatio,p.vwapRatioFTSE}, new PuntoConsolidato(p.codalfa,p.vwapRatio,p.vwapRatioFTSE,p.guadagno,p.tempo));
+					}
 				}
-				
-				//testa il tree con dati da startT a starT+deltaT:
-				//query=dataQuery(codalfa, "c.tempo>='"+tsFormat.format(new Date(startT))+"' AND c.tempo<'"+tsFormat.format(new Date(startT+deltaT))+"' "); 
 				TreeMap<Date, PuntoConsolidato> testSet = new TreeMap<Date, PuntoConsolidato>();
 				testSet.putAll(dati.subMap(new Date(startT),new Date(startT+deltaT)));
 				
-				System.out.println("Dati di testing: "+testSet.size());
+				if (printall) System.out.println("Dati di testing: "+testSet.size());
 				
-				//blacklist dei giorni, trada sulla prima occasione della giornata
-				ArrayList<Integer> giorniGiaTradati = new ArrayList<Integer>();
-				int mil = 1000*60*60*24; //milliseconds in a day
-				
-				ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
-				
-				for (Map.Entry<Date, PuntoConsolidato> e : testSet.entrySet()) {
-					PuntoConsolidato p = e.getValue();
-					//System.out.println(p);
-					int PointDay = (int)p.tempo.getTime()/mil;
-					if (!giorniGiaTradati.contains(PointDay) && condizioni(tree,p.vwapRatio,p.vwapRatioFTSE)) {
-						giorniGiaTradati.add(PointDay);
-						trades.add(new TradeResult((float)p.guadagno));
-						System.out.println("Entrato "+p.tempo+"\tGuadagno:\t"+p.guadagno);
-					}
-				}
-				performances.add(new Performance(trades));
-				//output separatore
-				//salva guadagnoMedio in array
+				performances.add(testSampleGroup(testSet.values(), tree,new MetodoPercentuale()));
 			
 			//outputta i guadagni medi delle varie crossvalidation, e il guadagno medio totale
 			
 			//return guadagno medio totale
 			}
-			System.out.println("====== CROSS VALIDATION TERMINATA =======");
+			if (printall) System.out.println("====== CROSS VALIDATION TERMINATA =======");
 			for (Performance p : performances) {
-				System.out.println(p);
+				if (printall) System.out.println(p);
 			}
-			System.out.println("====== PERFORMANCE COMPLESSIVA: =======");
+			if (printall) System.out.println("====== PERFORMANCE COMPLESSIVA: =======");
 			ArrayList<TradeResult> tradesTotali = new ArrayList<TradeResult>();
 			for (Performance p : performances) {
 				tradesTotali.addAll(p.trades);
 			}
 			System.out.println(new Performance(tradesTotali));
-			
+			return new Performance(tradesTotali);
 			
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+		return new Performance(new ArrayList<TradeResult>());
 	}
 	
-	boolean condizioni(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
+	static boolean condizioni(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
 		ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{vwapRatio,vwapRatioFtse}, 1000);
 		int mil = 1000*60*60*24; //milliseconds in a day
 		ArrayList<Integer> blacklistedDays = new ArrayList<Integer>();
 		int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
 		for (SearchResult<PuntoConsolidato> p : r) {
-			int pointDay = (int)p.payload.tempo.getTime()/mil;
+			int pointDay = (int)(p.payload.tempo.getTime()/mil);
 			//System.out.println("d="+p.distance);
 			double maxD=0.00003;
 			//if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
@@ -166,26 +197,25 @@ public class Evaluation {
 			//if (nViciniUsati>=K) break;
 		}
 
-		if (nGiorniNelVicinato>=3 && (float)nPositivi/nViciniUsati >0.60) {
+		if (nGiorniNelVicinato>=3 && (float)nPositivi/nViciniUsati >0.71) {
 			return true;
 		}
 		return false;
 	}
 	
-	boolean condizioniSharpe(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
+	static boolean condizioniSharpe(KDTree<PuntoConsolidato> tree,double vwapRatio,double vwapRatioFtse) {
 		//MAPPA SHARP
 		ArrayList<SearchResult<PuntoConsolidato>> r = tree.nearestNeighbours(new double[]{vwapRatio,vwapRatioFtse}, 1000);
 		int mil = 1000*60*60*24; //milliseconds in a day
 		ArrayList<Integer> blacklistedDays = new ArrayList<Integer>();		
-		int nViciniUsati=0, nPositivi=0,nGiorniNelVicinato=0;
-		float Tot=0;
+		int nGiorniNelVicinato=0;
 		ArrayList<TradeResult> trades = new ArrayList<TradeResult>();
 		for (SearchResult<PuntoConsolidato> p : r) {
-			int pointDay = (int)p.payload.tempo.getTime()/mil;
+			int pointDay = (int)(p.payload.tempo.getTime()/mil);
 			//System.out.println("d="+p.distance);
-			double maxD=0.00003;
-			if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
-			//if (p.distance<maxD) {
+			double maxD=0.00004;
+			//if (!blacklistedDays.contains(pointDay) && p.distance<maxD) {
+			if (p.distance<maxD) {
 				//System.out.println(p.payload);
 				if (!blacklistedDays.contains(pointDay)) {
 					blacklistedDays.add(pointDay);
@@ -193,10 +223,7 @@ public class Evaluation {
 					//trades.add(new TradeResult((float)p.payload.guadagno));
 				}
 				trades.add(new TradeResult((float)p.payload.guadagno));
-				nViciniUsati++;
-				Tot+=1-(p.distance/maxD);
 			}
-			//if (nViciniUsati>=K) break;
 		}
 		
 		Performance performanceVicinato = new Performance(trades);

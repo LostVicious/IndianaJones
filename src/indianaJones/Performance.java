@@ -64,8 +64,8 @@ public class Performance {
 	public String toString() {
 		return "Performance [nTrade=" + nTrade + ", percentualeDiSuccesso="
 				+ percentualeDiSuccesso + ", guadagnoMedio=" + guadagnoMedio
-				+ ", guadagnoTotale=" + guadagnoTotale + ", profitLoss="
-				+ profitLoss + ", sharpRatio=" + sharpRatio + "]";
+				+ ", guadagnoTotale=" + (guadagnoTotale>0 ? G.ANSI_GREEN:G.ANSI_RED) + guadagnoTotale + G.ANSI_RESET + ", profitLoss="
+				+ profitLoss + ", sharpRatio=" + (sharpRatio>0 ? G.ANSI_GREEN:G.ANSI_RED) + sharpRatio + G.ANSI_RESET + "]";
 	}
 	
 	
